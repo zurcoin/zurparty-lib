@@ -138,14 +138,25 @@ def parse (db, tx, message):
         if contract_id == '0000000000000000000000000000000000000000':
             contract_id = ''
 
+        import pyethereum.processblock
+        import pyethereum.transactions
+        import pyethereum.blocks
+        import pyethereum.db
+        db = db.DB('/home/adam/tmp/pyethereum.db')
+        tx_obj = pyethereum.transactions.Transaction(NONCE, gasprice, startgas, contract_id, value, payload)
+        block_obj = pyethereum.blocks.Block(DB)
+        success, output = processblock.apply_transaction(DB, tx_obj, block_obj)
+        print('success, output', success, output)
+
+        """
         # ‘Apply transaction’!
         tx_obj = Transaction(tx, contract_id, gasprice, startgas, value, payload)
         block_obj = blocks.Block(db, tx['block_hash'])
-        success, output, gas_remained = processblock.apply_transaction(db, tx_obj, block_obj)
         if not success and output == '':
             status = 'out of gas'
-        gas_cost = gasprice * (startgas - gas_remained) # different definition from pyethereum’s
+        """
 
+    # TODO
     except exceptions.UnpackError as e:
         contract_id, gasprice, startgas, value, payload = None, None, None, None, None
         status = 'invalid: could not unpack'
@@ -168,6 +179,7 @@ def parse (db, tx, message):
         logger.debug('TX OUT_OF_GAS (startgas: {}, gas_remained: {})'.format(startgas, gas_remained))
         status = 'out of gas'
         output = None
+    # TODO
     finally:
 
         if status == 'valid':
