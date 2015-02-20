@@ -145,14 +145,14 @@ def parse (db, tx, message):
         block_obj = blocks.Block(db, tx['block_hash'])
 
         import pyethereum.transactions
-        tx_obj = pyethereum.transactions.Transaction(block_obj.get_nonce(tx['source']), gasprice, startgas, contract_id, value, payload)
-        tx_obj.sender = tx['source']
+        from counterpartylib.lib import script
+        sender = script.base58_check_decode(tx['source'], config.ADDRESSVERSION) # TODO
+        tx_obj = pyethereum.transactions.Transaction(block_obj.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
+        tx_obj.sender = sender
 
         import pyethereum.processblock
         success, output = pyethereum.processblock.apply_transaction(block_obj, tx_obj)
         print('success, output', success, output)
-
-
 
 
 

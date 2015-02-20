@@ -77,7 +77,11 @@ def consensus_hash(db, field, previous_consensus_hash, content):
     if found_hash:
         # Check against existing value.
         if calculated_hash != found_hash:
-            raise ConsensusError('Inconsistent {} for block {}.'.format(field, block_index))
+            error_message = 'Inconsistent {} for block {}.'.format(field, block_index)
+            if config.TESTNET:
+                logger.error(error_message)
+            else:
+                raise ConsensusError(error_message)
     else:
         # Save new hash.
         cursor.execute('''UPDATE blocks SET {} = ? WHERE block_index = ?'''.format(field), (calculated_hash, block_index))
@@ -85,7 +89,11 @@ def consensus_hash(db, field, previous_consensus_hash, content):
     # Check against checkpoints.
     checkpoints = CHECKPOINTS_TESTNET if config.TESTNET else CHECKPOINTS_MAINNET
     if block_index in checkpoints and checkpoints[block_index][field] != calculated_hash:
-        raise ConsensusError('Incorrect {} for block {}.'.format(field, block_index))
+        error_message = 'Incorrect {} for block {}.'.format(field, block_index)
+        if config.TESTNET:
+            logger.error(error_message)
+        else:
+            raise ConsensusError(error_message)
 
     return calculated_hash
 

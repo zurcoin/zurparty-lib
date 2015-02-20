@@ -5,14 +5,35 @@
 from counterpartylib.lib import util
 from counterpartylib.lib import config
 from counterpartylib.lib import log
+from counterpartylib.lib import script
 from counterpartylib.lib.messages.scriptlib import rlp
 from counterpartylib.lib.messages.scriptlib import utils
 
 import logging
 logger = logging.getLogger(__name__)
 import pickle
+import binascii
 
 # NOTE: Not logging most of the specifics here.
+
+
+def convert(address):
+    """Convert a Bitcoin address from `bytes` to `str`.
+
+    Pass Bitcoin addresses to Ethereum VM as bytes, so that they may be
+    RLP‐encoded.
+    """
+    assert address
+    if type(address) == bytes:
+        address_bytes = address
+        address_hex = binascii.hexlify(address_bytes).decode('ascii')
+        address_str = script.base58_check_encode(address_hex, config.ADDRESSVERSION)
+
+        assert type(address_str) == str
+    else:
+        address_str = address
+        script.validate(address_str)
+    return address_str
 
 class Block(object):
 
@@ -25,7 +46,14 @@ class Block(object):
         self.number = block['block_index']
         self.prevhash = block['previous_block_hash']
         self.difficulty = block['difficulty']
+        self.gas_used = 0   # TODO
+        self.gas_limit = 100000000000000   # TODO
+        self.coinbase = '' # TODO
 
+        return
+
+    def set_balance(self, address):
+        address = convert(address)
         return
 
     def postqueue_delete(self):
@@ -121,6 +149,7 @@ class Block(object):
 
 
     def account_to_dict(self, address):
+        address = convert(address)
         return {'nonce': Block.get_nonce(self, address), 'balance': Block.get_balance(self, address), 'storage': Block.get_storage_data(self, address), 'code': utils.hexprint(Block.get_code(self, address))}
 
     def get_code (self, contract_id):
@@ -135,12 +164,14 @@ class Block(object):
         return code
 
     def get_nonce(self, address):
+        address = convert(address)
         cursor = self.db.cursor()
         nonces = list(cursor.execute('''SELECT * FROM nonces WHERE (address = ?)''', (address,)))
         if not nonces: return 0
         else: return nonces[0]['nonce']
 
     def set_nonce(self, address, nonce):
+        address = convert(address)
         cursor = self.db.cursor()
         cursor.execute('''SELECT * FROM nonces WHERE (address = :address)''', {'address': address})
         nonces = list(cursor)
@@ -153,21 +184,31 @@ class Block(object):
             cursor.execute('''UPDATE nonces SET nonce = :nonce WHERE (address = :address)''', bindings)
 
     def increment_nonce(self, address):
+        address = convert(address)
         nonce = Block.get_nonce(self, address)
         Block.set_nonce(self, address, nonce + 1)
 
     def decrement_nonce(self, address):
+        address = convert(address)
         nonce = Block.get_nonce(self, address)
         Block.set_nonce(self, address, nonce - 1)
 
     def get_balance(self, address, asset=config.XCP):
+        address = convert(address)
         return util.get_balance(self.db, address, asset)
 
-    def transfer_value(self, tx, source, destination, quantity, asset=config.XCP):
+    def transfer_value(self, source, destination, quantity, asset=config.XCP):
+        if not destination: # TODO: Coinbase
+            return True
+
+        source = convert(source)
+        destination = convert(destination)
+
+        tx_hash = 'foobar' # TODO
         if source:
-            util.debit(self.db, source, asset, quantity, action='transfer value', event=tx.tx_hash)
+            util.debit(self.db, source, asset, quantity, action='transfer value', event=tx_hash)
         if destination:
-            util.credit(self.db, destination, asset, quantity, action='transfer value', event=tx.tx_hash)
+            util.credit(self.db, destination, asset, quantity, action='transfer value', event=tx_hash)
         return True
 
     def del_account(self, contract_id):
