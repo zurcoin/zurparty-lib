@@ -8,7 +8,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 from counterpartylib.lib import (util, config, exceptions)
-from .scriptlib import (utils, blocks, processblock)
+
+from . import pyeth
+
 
 FORMAT = '>20sQQQ'
 LENGTH = 44
@@ -140,9 +142,9 @@ def parse (db, tx, message):
 
 
 
+        import pyethereum.exceptions
 
-
-        block_obj = blocks.Block(db, tx['block_hash'])
+        block_obj = pyeth.Block(db, tx['block_hash'])
 
         import pyethereum.transactions
         from counterpartylib.lib import script
@@ -154,6 +156,9 @@ def parse (db, tx, message):
         success, output = pyethereum.processblock.apply_transaction(block_obj, tx_obj)
         print('success, output', success, output)
 
+        if contract_id == '':
+            contract_id = 'NEWCONTRACT' # TODO
+        import time; time.sleep(1)  # TODO
 
 
 

@@ -1,13 +1,9 @@
 #! /usr/bin/python3
 
-"""Based on pyethereum <https://github.com/ethereum/pyethereum>."""
-
 from counterpartylib.lib import util
 from counterpartylib.lib import config
 from counterpartylib.lib import log
 from counterpartylib.lib import script
-from counterpartylib.lib.messages.scriptlib import rlp
-from counterpartylib.lib.messages.scriptlib import utils
 
 import logging
 logger = logging.getLogger(__name__)
@@ -16,6 +12,16 @@ import binascii
 import string
 
 # NOTE: Not logging most of the specifics here.
+
+
+def hexprint(x):
+    assert type(x) in (bytes, list)
+    if not x:
+        return '<None>'
+    if x != -1:
+        return ('0x' + util.hexlify(bytes(x)))
+    else:
+        return 'OUT OF GAS'
 
 
 def convert(address):
@@ -127,6 +133,11 @@ class Block(object):
         # TODO
         return
 
+    def set_code (self, to, dat):
+        # TODO
+        # TODO
+        return
+
     def get_storage_data(self, contract_id, key=None):
         cursor = self.db.cursor()
 
@@ -144,7 +155,8 @@ class Block(object):
             return 0
         value = storages[0]['value']
 
-        value = rlp.big_endian_to_int(value)
+        import pyethereum.rlp
+        value = pyethereum.rlp.big_endian_to_int(value)
         return value
 
     def set_storage_data(self, contract_id, key, value):
@@ -182,7 +194,7 @@ class Block(object):
 
     def account_to_dict(self, address):
         address = convert(address)
-        return {'nonce': Block.get_nonce(self, address), 'balance': Block.get_balance(self, address), 'storage': Block.get_storage_data(self, address), 'code': utils.hexprint(Block.get_code(self, address))}
+        return {'nonce': Block.get_nonce(self, address), 'balance': Block.get_balance(self, address), 'storage': Block.get_storage_data(self, address), 'code': hexprint(Block.get_code(self, address))}
 
     def get_code (self, contract_id):
         cursor = self.db.cursor()
