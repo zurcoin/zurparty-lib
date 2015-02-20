@@ -138,14 +138,25 @@ def parse (db, tx, message):
         if contract_id == '0000000000000000000000000000000000000000':
             contract_id = ''
 
-        import pyethereum.processblock
+
+
+
+
+        block_obj = blocks.Block(db, tx['block_hash'])
+
         import pyethereum.transactions
-        NONCE = 1
-        tx_obj = pyethereum.transactions.Transaction(NONCE, gasprice, startgas, contract_id, value, payload)
+        tx_obj = pyethereum.transactions.Transaction(block_obj.get_nonce(tx['source']), gasprice, startgas, contract_id, value, payload)
         tx_obj.sender = tx['source']
-        block_obj = None
+
+        import pyethereum.processblock
         success, output = pyethereum.processblock.apply_transaction(block_obj, tx_obj)
         print('success, output', success, output)
+
+
+
+
+
+
 
         """
         # ‘Apply transaction’!
@@ -155,30 +166,29 @@ def parse (db, tx, message):
             status = 'out of gas'
         """
 
-    # TODO
     except exceptions.UnpackError as e:
         contract_id, gasprice, startgas, value, payload = None, None, None, None, None
         status = 'invalid: could not unpack'
         output = None
-    except processblock.ContractError as e:
-        status = 'invalid: no such contract'
-        contract_id = None
-        output = None
-    except processblock.InsufficientStartGas as e:
-        have, need = e.args
-        logger.debug('Insufficient start gas: have {} and need {}'.format(have, need))
+    # except processblock.ContractError as e:
+    #     status = 'invalid: no such contract'
+    #     contract_id = None
+    #     output = None
+    except pyethereum.exceptions.InsufficientStartGas as e:
+        logger.debug(e)
+        # logger.debug('Insufficient start gas: have {} and need {}'.format(have, need))
         status = 'invalid: insufficient start gas'
         output = None
-    except processblock.InsufficientBalance as e:
-        have, need = e.args
-        logger.debug('Insufficient balance: have {} and need {}'.format(have, need))
+    except pyethereum.exceptions.InsufficientBalance as e:
+        logger.debug(e)
+        # logger.debug('Insufficient balance: have {} and need {}'.format(actual, target))
         status = 'invalid: insufficient balance'
         output = None
-    except processblock.OutOfGas as e:
-        logger.debug('TX OUT_OF_GAS (startgas: {}, gas_remained: {})'.format(startgas, gas_remained))
-        status = 'out of gas'
-        output = None
-    # TODO
+    # except processblock.OutOfGas as e:
+    #     logger.debug('TX OUT_OF_GAS (startgas: {}, gas_remained: {})'.format(startgas, gas_remained))
+    #     status = 'out of gas'
+    #     output = None
+
     finally:
 
         if status == 'valid':
