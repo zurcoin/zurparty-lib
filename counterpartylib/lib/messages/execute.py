@@ -140,12 +140,11 @@ def parse (db, tx, message):
 
         import pyethereum.processblock
         import pyethereum.transactions
-        import pyethereum.blocks
-        import pyethereum.db
-        db = db.DB('/home/adam/tmp/pyethereum.db')
+        NONCE = 1
         tx_obj = pyethereum.transactions.Transaction(NONCE, gasprice, startgas, contract_id, value, payload)
-        block_obj = pyethereum.blocks.Block(DB)
-        success, output = processblock.apply_transaction(DB, tx_obj, block_obj)
+        tx_obj.sender = tx['source']
+        block_obj = None
+        success, output = pyethereum.processblock.apply_transaction(block_obj, tx_obj)
         print('success, output', success, output)
 
         """
