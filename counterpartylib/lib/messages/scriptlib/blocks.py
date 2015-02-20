@@ -49,8 +49,15 @@ class Block(object):
         self.gas_used = 0   # TODO
         self.gas_limit = 100000000000000   # TODO
         self.coinbase = '' # TODO
+        self.suicides = []   # TODO
 
         return
+
+    def snapshot(self): # TODO
+        return  # TODO
+
+    def add_transaction_to_list(self, tx): # TODO
+        return  # TODO
 
     def set_balance(self, address):
         address = convert(address)
@@ -86,14 +93,22 @@ class Block(object):
 
     def suicides_get(self):
         cursor = self.db.cursor()
-        return list(cursor.execute('''SELECT * FROM suicides'''))
+        self.suicides = list(cursor.execute('''SELECT * FROM suicides'''))
+        return self.suicides
 
     def suicides_delete(self):
         cursor = self.db.cursor()
         cursor.execute('''DELETE FROM suicides''')
 
-    def revert(self):
+    def revert(self, snapshot):
+        # TODO
+        # TODO
         logger.debug('### REVERTING ###')
+
+    def commit_state(self):
+        # TODO
+        # TODO
+        return
 
     def get_storage_data(self, contract_id, key=None):
         cursor = self.db.cursor()
