@@ -13,6 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 import pickle
 import binascii
+import string
 
 # NOTE: Not logging most of the specifics here.
 
@@ -23,6 +24,10 @@ def convert(address):
     Pass Bitcoin addresses to Ethereum VM as bytes, so that they may be
     RLP‐encoded.
     """
+
+    if address == '3kbQ7ZT62PAgeNQBTixJHqn7Hopj4pQc5MGFqRapKN8ecEGSjJBWJUT5GgP5Be':
+        raise Exception
+
     assert address
     if type(address) == bytes:
         address_bytes = address
@@ -32,7 +37,13 @@ def convert(address):
         assert type(address_str) == str
     else:
         address_str = address
-        script.validate(address_str)
+        if all(c in string.hexdigits for c in address_str):
+            # Ethereum address string.
+            return address_str
+        else:
+            # Bitcoin address string.
+            script.validate(address_str)
+
     return address_str
 
 class Block(object):
@@ -50,6 +61,7 @@ class Block(object):
         self.gas_limit = 100000000000000   # TODO
         self.coinbase = '' # TODO
         self.suicides = []   # TODO
+        self.refunds = 0   # TODO
 
         return
 
@@ -106,6 +118,11 @@ class Block(object):
         logger.debug('### REVERTING ###')
 
     def commit_state(self):
+        # TODO
+        # TODO
+        return
+
+    def refunds(self):
         # TODO
         # TODO
         return
@@ -213,7 +230,7 @@ class Block(object):
         return util.get_balance(self.db, address, asset)
 
     def transfer_value(self, source, destination, quantity, asset=config.XCP):
-        if not destination: # TODO: Coinbase
+        if not source or not destination: # TODO: Coinbase
             return True
 
         source = convert(source)

@@ -110,7 +110,7 @@ def base58_check_decode(s, version):
 
     addrbyte, data, chk0 = k[0:1], k[1:-4], k[-4:]
     if addrbyte != version:
-        raise VersionByteError('incorrect version byte')
+        raise VersionByteError('Version byte mismatch: {} ≠ {}'.format(addrbyte, version))
     chk1 = util.dhash(addrbyte + data)[:4]
     if chk0 != chk1:
         raise Base58ChecksumError('Checksum mismatch: 0x{} ≠ 0x{}'.format(util.hexlify(chk0), util.hexlify(chk1)))
