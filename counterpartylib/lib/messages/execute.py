@@ -116,7 +116,7 @@ class Transaction(object):
                 }
         return dict_
 
-def parse (db, tx, message):
+def parse (db, tx, message, pyeth_block):
     if not config.TESTNET:  # TODO
         return
 
@@ -141,20 +141,18 @@ def parse (db, tx, message):
             contract_id = ''
 
 
-
         import pyethereum.exceptions
-
-        block_obj = pyeth.Block(db, tx['block_hash'])
-
         import pyethereum.transactions
+        import pyethereum.processblock
         from counterpartylib.lib import script
+
         sender = script.base58_check_decode(tx['source'], config.ADDRESSVERSION) # TODO
-        tx_obj = pyethereum.transactions.Transaction(block_obj.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
+        tx_obj = pyethereum.transactions.Transaction(pyeth_block.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
         tx_obj.sender = sender
 
-        import pyethereum.processblock
-        success, output = pyethereum.processblock.apply_transaction(block_obj, tx_obj)
-        print('success, output', success, output)
+        success, output = pyethereum.processblock.apply_transaction(pyeth_block, tx_obj)
+        print('SUCCESS {}'.format(success))
+        print('OUTPUT {}'.format(output))
 
         if contract_id == '':
             contract_id = 'NEWCONTRACT' # TODO

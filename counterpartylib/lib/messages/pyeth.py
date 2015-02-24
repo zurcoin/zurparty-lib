@@ -11,9 +11,6 @@ import pickle
 import binascii
 import string
 
-# NOTE: Not logging most of the specifics here.
-
-
 def hexprint(x):
     assert type(x) in (bytes, list)
     if not x:
@@ -30,6 +27,7 @@ def convert(address):
     Pass Bitcoin addresses to Ethereum VM as bytes, so that they may be
     RLP‐encoded.
     """
+    # NOTE: HACK?
 
     if address == '3kbQ7ZT62PAgeNQBTixJHqn7Hopj4pQc5MGFqRapKN8ecEGSjJBWJUT5GgP5Be':
         raise Exception
@@ -54,20 +52,22 @@ def convert(address):
 
 class Block(object):
 
-    def __init__(self, db, block_hash):
+    def __init__(self, db, block_index):
         self.db = db
 
         cursor = db.cursor()
-        block = list(cursor.execute('''SELECT * FROM blocks WHERE block_hash = ?''', (block_hash,)))[0]
+        block = list(cursor.execute('''SELECT * FROM blocks WHERE block_index= ?''', (block_index,)))[0]
+        self.block_hash = block['block_hash']
         self.timestamp = block['block_time']
         self.number = block['block_index']
         self.prevhash = block['previous_block_hash']
         self.difficulty = block['difficulty']
-        self.gas_used = 0   # TODO
-        self.gas_limit = 100000000000000   # TODO
-        self.coinbase = '' # TODO
-        self.suicides = []   # TODO
-        self.refunds = 0   # TODO
+        self.gas_used = int(block['gas_used'])  # TODO: `int()` temporary
+        self.gas_limit = int(block['gas_limit'])    # TODO: `int()` temporary
+        self.refunds = int(block['gas_limit'])    # TODO: `int()` temporary
+        cursor.execute('''DELETE FROM suicides''')
+        self.suicides = self.suicides_get()
+        self.coinbase = 'COINBASE'  # TODO
 
         return
 
@@ -76,6 +76,26 @@ class Block(object):
 
     def add_transaction_to_list(self, tx): # TODO
         return  # TODO
+
+    def revert(self, snapshot):
+        # TODO
+        # TODO
+        return
+
+    def commit_state(self):
+        # TODO
+        # TODO
+        return
+
+    def refunds(self):
+        # TODO
+        # TODO
+        return
+
+    def set_code (self, to, dat):
+        # TODO
+        # TODO
+        return
 
     def set_balance(self, address):
         address = convert(address)
@@ -117,26 +137,6 @@ class Block(object):
     def suicides_delete(self):
         cursor = self.db.cursor()
         cursor.execute('''DELETE FROM suicides''')
-
-    def revert(self, snapshot):
-        # TODO
-        # TODO
-        logger.debug('### REVERTING ###')
-
-    def commit_state(self):
-        # TODO
-        # TODO
-        return
-
-    def refunds(self):
-        # TODO
-        # TODO
-        return
-
-    def set_code (self, to, dat):
-        # TODO
-        # TODO
-        return
 
     def get_storage_data(self, contract_id, key=None):
         cursor = self.db.cursor()
@@ -242,17 +242,16 @@ class Block(object):
         return util.get_balance(self.db, address, asset)
 
     def transfer_value(self, source, destination, quantity, asset=config.XCP):
-        if not source or not destination: # TODO: Coinbase
+        if source == self.coinbase or destination == self.coinbase:
             return True
 
         source = convert(source)
         destination = convert(destination)
 
-        tx_hash = 'foobar' # TODO
         if source:
-            util.debit(self.db, source, asset, quantity, action='transfer value', event=tx_hash)
+            util.debit(self.db, source, asset, quantity, action='transfer value', event=self.block_hash)
         if destination:
-            util.credit(self.db, destination, asset, quantity, action='transfer value', event=tx_hash)
+            util.credit(self.db, destination, asset, quantity, action='transfer value', event=self.block_hash)
         return True
 
     def del_account(self, contract_id):

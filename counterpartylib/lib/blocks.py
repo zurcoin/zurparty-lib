@@ -30,6 +30,7 @@ from counterpartylib.lib import backend
 from counterpartylib.lib import log
 from counterpartylib.lib import database
 from .messages import (send, order, btcpay, issuance, broadcast, bet, dividend, burn, cancel, rps, rpsresolve, publish, execute, destroy)
+from counterpartylib.lib.messages import pyeth
 
 from .kickstart.blocks_parser import BlockchainParser, ChainstateParser
 from .kickstart.utils import ib2h
@@ -53,7 +54,9 @@ with open(CURR_DIR + '/../mainnet_burns.csv', 'r') as f:
     for line in mainnet_burns_reader:
         MAINNET_BURNS[line['tx_hash']] = line
 
-def parse_tx(db, tx):
+GASLIMIT = 1 * config.UNIT # TODO
+
+def parse_tx(db, tx, pyeth_block):
     """Parse the transaction, return True for success."""
     cursor = db.cursor()
 
@@ -102,9 +105,9 @@ def parse_tx(db, tx):
     elif message_type_id == rpsresolve.ID and rps_enabled:
         rpsresolve.parse(db, tx, message)
     elif message_type_id == publish.ID and tx['block_index'] != config.MEMPOOL_BLOCK_INDEX:
-        publish.parse(db, tx, message)
+        publish.parse(db, tx, message, pyeth_block)
     elif message_type_id == execute.ID and tx['block_index'] != config.MEMPOOL_BLOCK_INDEX:
-        execute.parse(db, tx, message)
+        execute.parse(db, tx, message, pyeth_block)
     elif message_type_id == destroy.ID:
         destroy.parse(db, tx, message)
     else:
@@ -142,13 +145,16 @@ def parse_block(db, block_index, block_time, previous_ledger_hash=None,
     bet.expire(db, block_index, block_time)
     rps.expire(db, block_index)
 
+    # Block object for virtual machine.
+    pyeth_block = pyeth.Block(db, block_index)
+
     # Parse transactions, sorting them by type.
     cursor.execute('''SELECT * FROM transactions \
                       WHERE block_index=? ORDER BY tx_index''',
                    (block_index,))
     txlist = []
     for tx in list(cursor):
-        parse_tx(db, tx)
+        parse_tx(db, tx, pyeth_block)
         txlist.append('{}{}{}{}{}{}'.format(tx['tx_hash'], tx['source'], tx['destination'],
                                             tx['btc_amount'], tx['fee'],
                                             binascii.hexlify(tx['data']).decode('UTF-8')))
@@ -173,6 +179,9 @@ def initialise(db):
                       block_time INTEGER,
                       previous_block_hash TEXT UNIQUE,
                       difficulty INTEGER,
+                      gas_used INTEGER,
+                      gas_limit INTEGER,
+                      refunds INTEGER,
                       PRIMARY KEY (block_index, block_hash))
                    ''')
     cursor.execute('''CREATE INDEX IF NOT EXISTS
@@ -192,6 +201,12 @@ def initialise(db):
         cursor.execute('''ALTER TABLE blocks ADD COLUMN previous_block_hash TEXT''')
     if 'difficulty' not in columns:
         cursor.execute('''ALTER TABLE blocks ADD COLUMN difficulty TEXT''')
+    if 'gas_used' not in columns:
+        cursor.execute('''ALTER TABLE blocks ADD COLUMN gas_used TEXT''')
+    if 'gas_limit' not in columns:
+        cursor.execute('''ALTER TABLE blocks ADD COLUMN gas_limit TEXT''')
+    if 'refunds' not in columns:
+        cursor.execute('''ALTER TABLE blocks ADD COLUMN refunds TEXT''')
 
 
     # Check that first block in DB is BLOCK_FIRST.
@@ -981,12 +996,18 @@ def follow(db):
                                     block_hash,
                                     block_time,
                                     previous_block_hash,
-                                    difficulty) VALUES(?,?,?,?,?)''',
+                                    difficulty,
+                                    gas_used,
+                                    gas_limit,
+                                    refunds) VALUES(?,?,?,?,?,?,?,?)''',
                                     (block_index,
                                     block_hash,
                                     block_time,
                                     previous_block_hash,
-                                    block.difficulty)
+                                    block.difficulty,
+                                    0,
+                                    GASLIMIT,
+                                    0)
                               )
 
                 # List the transactions in the block.
