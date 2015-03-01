@@ -104,7 +104,6 @@ def message(db, block_index, command, category, bindings, tx_hash=None):
 
 
 def log (db, command, category, bindings):
-    logger = logging.getLogger(__name__)    # TODO
     cursor = db.cursor()
 
     for element in bindings.keys():

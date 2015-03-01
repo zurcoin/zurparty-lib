@@ -14,10 +14,6 @@ from counterpartylib.lib import script
 
 from . import pyeth
 
-import pyethereum.exceptions
-import pyethereum.transactions
-import pyethereum.processblock
-
 FORMAT = '>20sQQQ'
 LENGTH = 44
 ID = 101
@@ -131,6 +127,11 @@ def parse (db, tx, message, pyeth_block):
 
     try:
         contract_id, gasprice, startgas, value, payload = unpack(db, message)
+
+        import pyethereum.exceptions
+        import pyethereum.transactions
+        import pyethereum.processblock
+        from counterpartylib.lib import script
    
         sender = script.base58_check_decode(tx['source'], config.ADDRESSVERSION) # TODO
         tx_obj = pyethereum.transactions.Transaction(pyeth_block.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
