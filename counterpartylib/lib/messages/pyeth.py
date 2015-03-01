@@ -20,6 +20,7 @@ def hexprint(x):
     else:
         return 'OUT OF GAS'
 
+# TODO  GAS COSTS, CONSTANTS
 
 def convert(address):
     """Convert a Bitcoin address from `bytes` to `str`.
@@ -242,15 +243,11 @@ class Block(object):
         return util.get_balance(self.db, address, asset)
 
     def transfer_value(self, source, destination, quantity, asset=config.XCP):
-        if source == self.coinbase or destination == self.coinbase:
-            return True
-
-        source = convert(source)
-        destination = convert(destination)
-
-        if source:
+        if source != self.coinbase:
+            source = convert(source)
             util.debit(self.db, source, asset, quantity, action='transfer value', event=self.block_hash)
-        if destination:
+        if destination != self.coinbase:
+            destination = convert(destination)
             util.credit(self.db, destination, asset, quantity, action='transfer value', event=self.block_hash)
         return True
 

@@ -7,10 +7,16 @@ import binascii
 import logging
 logger = logging.getLogger(__name__)
 
-from counterpartylib.lib import (util, config, exceptions)
+from counterpartylib.lib import util
+from counterpartylib.lib import config
+from counterpartylib.lib import exceptions
+from counterpartylib.lib import script
 
 from . import pyeth
 
+import pyethereum.exceptions
+import pyethereum.transactions
+import pyethereum.processblock
 
 FORMAT = '>20sQQQ'
 LENGTH = 44
@@ -90,31 +96,31 @@ def compose (db, source, contract_id, gasprice, startgas, value, payload_hex):
 
     return (source, [], data)
 
-class Transaction(object):
-    def __init__(self, tx, to, gasprice, startgas, value, data):
-        assert type(data) == bytes
-        self.block_index = tx['block_index']
-        self.tx_hash = tx['tx_hash']
-        self.tx_index = tx['tx_index']
-        self.sender = tx['source']
-        self.data = data 
-        self.to = to
-        self.gasprice = gasprice
-        self.startgas = startgas
-        self.value = value
-        self.timestamp = tx['block_time']
-    def hex_hash(self):
-        return '<None>'
-    def to_dict(self):
-        dict_ = {
-                 'sender': self.sender,
-                 'data': utils.hexprint(self.data),
-                 'to': self.to,
-                 'gasprice': self.gasprice,
-                 'startgas': self.startgas,
-                 'value': self.value
-                }
-        return dict_
+def unpack(db, message):
+    try:
+        format_ = FORMAT + '{}s'.format(len(message) - LENGTH)
+        contract_id, gasprice, startgas, value, payload = struct.unpack(format_, message)
+
+        # TODO: Define max for gasprice and startgas.
+        if gasprice > config.MAX_INT or startgas > config.MAX_INT:
+            raise exceptions.UnpackError()
+
+        # TODO
+        gas_remained = startgas
+
+        # TODO
+        contract_id = util.hexlify(contract_id)
+        if contract_id == '0000000000000000000000000000000000000000':
+            contract_id = ''
+
+    except struct.error:
+        raise UnpackError('could not unpack')
+
+    except util.AssetNameError:
+        raise UnpackError('asset id invalid')
+
+    return contract_id, gasprice, startgas, value, payload
+
 
 def parse (db, tx, message, pyeth_block):
     if not config.TESTNET:  # TODO
@@ -124,28 +130,8 @@ def parse (db, tx, message, pyeth_block):
     output, gas_cost, gas_remained = None, None, None
 
     try:
-        # TODO: Use unpack function.
-        # Unpack message.
-        curr_format = FORMAT + '{}s'.format(len(message) - LENGTH)
-        try:
-            contract_id, gasprice, startgas, value, payload = struct.unpack(curr_format, message)
-            if gasprice > config.MAX_INT or startgas > config.MAX_INT: # TODO: define max for gasprice and startgas
-                raise exceptions.UnpackError()
-        except (struct.error) as e:
-            raise exceptions.UnpackError()
-
-        gas_remained = startgas
-
-        contract_id = util.hexlify(contract_id)
-        if contract_id == '0000000000000000000000000000000000000000':
-            contract_id = ''
-
-
-        import pyethereum.exceptions
-        import pyethereum.transactions
-        import pyethereum.processblock
-        from counterpartylib.lib import script
-
+        contract_id, gasprice, startgas, value, payload = unpack(db, message)
+   
         sender = script.base58_check_decode(tx['source'], config.ADDRESSVERSION) # TODO
         tx_obj = pyethereum.transactions.Transaction(pyeth_block.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
         tx_obj.sender = sender
@@ -154,21 +140,6 @@ def parse (db, tx, message, pyeth_block):
         print('SUCCESS {}'.format(success))
         print('OUTPUT {}'.format(output))
 
-        if contract_id == '':
-            contract_id = 'NEWCONTRACT' # TODO
-        import time; time.sleep(1)  # TODO
-
-
-
-
-        """
-        # ‘Apply transaction’!
-        tx_obj = Transaction(tx, contract_id, gasprice, startgas, value, payload)
-        block_obj = blocks.Block(db, tx['block_hash'])
-        if not success and output == '':
-            status = 'out of gas'
-        """
-
     except exceptions.UnpackError as e:
         contract_id, gasprice, startgas, value, payload = None, None, None, None, None
         status = 'invalid: could not unpack'
@@ -176,6 +147,10 @@ def parse (db, tx, message, pyeth_block):
     # except processblock.ContractError as e:
     #     status = 'invalid: no such contract'
     #     contract_id = None
+    #     output = None
+    # except processblock.OutOfGas as e:
+    #     logger.debug('TX OUT_OF_GAS (startgas: {}, gas_remained: {})'.format(startgas, gas_remained))
+    #     status = 'out of gas'
     #     output = None
     except pyethereum.exceptions.InsufficientStartGas as e:
         logger.debug(e)
@@ -187,10 +162,6 @@ def parse (db, tx, message, pyeth_block):
         # logger.debug('Insufficient balance: have {} and need {}'.format(actual, target))
         status = 'invalid: insufficient balance'
         output = None
-    # except processblock.OutOfGas as e:
-    #     logger.debug('TX OUT_OF_GAS (startgas: {}, gas_remained: {})'.format(startgas, gas_remained))
-    #     status = 'out of gas'
-    #     output = None
 
     finally:
 

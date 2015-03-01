@@ -80,6 +80,7 @@ def consensus_hash(db, field, previous_consensus_hash, content):
             error_message = 'Inconsistent {} for block {}.'.format(field, block_index)
             if config.TESTNET:
                 logger.error(error_message)
+                exit(1) # TODO
             else:
                 raise ConsensusError(error_message)
     else:
