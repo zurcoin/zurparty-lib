@@ -132,14 +132,54 @@ def parse (db, tx, message, pyeth_block):
         import pyethereum.transactions
         import pyethereum.processblock
         from counterpartylib.lib import script
-   
+
+
+
+        ### Make fees proportional to money supply. ###
+        # Set initial values. Calculate price multiplier.
+        # Multiply prices by multiplier, then by 100; make global variables.
+        import fractions
+        import math
+        MULTIPLIER_CONSTANT_FACTOR = 100
+        prices = { # TODO
+                  'GDEFAULT': 1,
+                  'GMEMORY': 1,
+                  'GSTORAGE': 100,
+                  'GTXDATA': 5,
+                  'GTXCOST': 500
+                 }
+        if config.TESTNET:
+            supply = 2600001 * config.UNIT
+        else:
+            supply = util.xcp_supply(db)
+        MULTIPLIER = fractions.Fraction(supply, 2700000 * config.UNIT) * MULTIPLIER_CONSTANT_FACTOR
+        for key in prices.keys():
+            prices[key] = fractions.Fraction(prices[key]) * MULTIPLIER
+            prices[key] = math.floor(prices[key].__round__(2))
+            prices[key] = max(prices[key], 1)
+            assert prices[key] > 0
+
+            # TODO: These values are duplicated across `pyethereum.fastvm` and `pyethereum.opcodes`.
+            exec('''pyethereum.fastvm.{} = prices['{}']'''.format(key, key, key))
+            try:
+                exec('''pyethereum.opcodes.{} = prices['{}']'''.format(key, key, key))
+            except AttributeError:
+                pass
+
+
+
+
+
+        from pyethereum.slogging import get_logger, configure_logging
+        logger = get_logger()
+        configure_logging(':trace') # TODO
+
         sender = script.base58_check_decode(tx['source'], config.ADDRESSVERSION) # TODO
         tx_obj = pyethereum.transactions.Transaction(pyeth_block.get_nonce(sender), gasprice, startgas, contract_id, value, payload)
         tx_obj.sender = sender
 
         success, output = pyethereum.processblock.apply_transaction(pyeth_block, tx_obj)
-        print('SUCCESS {}'.format(success))
-        print('OUTPUT {}'.format(output))
+        import time; time.sleep(1)  # TODO
 
     except exceptions.UnpackError as e:
         contract_id, gasprice, startgas, value, payload = None, None, None, None, None
