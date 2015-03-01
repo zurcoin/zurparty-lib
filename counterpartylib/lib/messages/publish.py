@@ -55,9 +55,9 @@ def parse (db, tx, message, pyeth_block):
 
     code = util.hexlify(message[LENGTH:])
     source, destination, data = execute.compose(db, tx['source'], '', gasprice, startgas, endowment, code)
-    message = data[4:]
 
     # Execute transaction upon publication, for actual creation of contract.
+    message = data[4:]
     execute.parse(db, tx, message, pyeth_block)
 
 

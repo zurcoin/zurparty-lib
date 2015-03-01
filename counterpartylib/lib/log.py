@@ -104,6 +104,7 @@ def message(db, block_index, command, category, bindings, tx_hash=None):
 
 
 def log (db, command, category, bindings):
+    logger = logging.getLogger(__name__)    # TODO
     cursor = db.cursor()
 
     for element in bindings.keys():
@@ -257,6 +258,8 @@ def log (db, command, category, bindings):
             logger.info('New Contract: {}'.format(bindings['contract_id']))
 
         elif category == 'executions':
+
+            # TODO
             """
             try:
                 payload_hex = binascii.hexlify(bindings['payload']).decode('ascii')
@@ -268,10 +271,15 @@ def log (db, command, category, bindings):
                 output_hex = '<None>'
             logger.info('Execution: {} executed contract {}, funded with {}, at a price of {} (?), at a final cost of {}, reclaiming {}, and also sending {}, with a data payload of {}, yielding {} ({}) [{}]'.format(bindings['source'], bindings['contract_id'], output(bindings['gas_start'], config.XCP), bindings['gas_price'], output(bindings['gas_cost'], config.XCP), output(bindings['gas_remaining'], config.XCP), output(bindings['value'], config.XCP), payload_hex, output_hex, bindings['tx_hash'], bindings['status']))
             """
+
             if bindings['contract_id']:
                 logger.info('Execution: {} executed contract {} ({}) [{}]'.format(bindings['source'], bindings['contract_id'], bindings['tx_hash'], bindings['status']))
             else:
-                logger.info('Execution: {} created contract {} ({}) [{}]'.format(bindings['source'], bindings['output'], bindings['tx_hash'], bindings['status']))
+                if bindings['output']:
+                    contract_id = bindings['output']
+                else:
+                    contract_id = '<FAIL>'
+                logger.info('Execution: {} created contract {} ({}) [{}]'.format(bindings['source'], contract_id, bindings['tx_hash'], bindings['status']))
 
         elif category == 'destructions':
             logger.info('Destruction: {} destroyed {} {} with tag ‘{}’({}) [{}]'.format(bindings['source'], bindings['quantity'], bindings['asset'], bindings['tag'], bindings['tx_hash'], bindings['status']))
