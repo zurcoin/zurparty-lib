@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 import pickle
 import binascii
 import string
+import random
 
 def hexprint(x):
     assert type(x) in (bytes, list)
@@ -72,21 +73,26 @@ class Block(object):
 
         return
 
-    def snapshot(self): # TODO
-        return  # TODO
+    def snapshot(self):
+        cursor = self.db.cursor()
+        LENGTH = 16
+        snapshot_name = ''.join(random.SystemRandom().choice(string.ascii_lowercase) for _ in range(LENGTH))
+        cursor.execute('''SAVEPOINT {}'''.format(snapshot_name))
+        return snapshot_name
 
-    def add_transaction_to_list(self, tx): # TODO
-        return  # TODO
-
-    def revert(self, snapshot):
-        # TODO
-        # TODO
+    def revert(self, snapshot_name):
+        cursor = self.db.cursor()
+        cursor.execute('''ROLLBACK TO {}'''.format(snapshot_name))
         return
 
     def commit_state(self):
-        # TODO
-        # TODO
+        cursor = self.db.cursor()
+        # logger.warning('releasing')    # TODO
+        # TODO: cursor.execute('''RELEASE SAVEPOINT''')   # TODO: Non‐specific?
         return
+
+    def add_transaction_to_list(self, tx): # TODO
+        return  # TODO
 
     def refunds(self):
         # TODO
