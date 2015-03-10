@@ -452,6 +452,15 @@ class APIServer(threading.Thread):
             return util.xcp_supply(db)
 
         @dispatcher.add_method
+        def get_supply(asset):
+            if asset == 'BTC':
+                return  backend.get_btc_supply(normalize=False)
+            elif asset == 'XCP':
+                return util.xcp_supply(db)
+            else:
+                return util.asset_supply(db, asset)
+
+        @dispatcher.add_method
         def get_asset_info(assets):
             if not isinstance(assets, list):
                 raise APIError("assets must be a list of asset names, even if it just contains one entry")
