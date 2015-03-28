@@ -1,4 +1,6 @@
 ## Client Versions ##
+* v9.51.1 (???)
+	* automatically spend 1‐of‐`N` multisig outputs
 * v9.51.0 (2015-03-28)
 	* remove `get_asset_info(assets)` method from the API
 	* replace `get_xcp_supply()` method from the API by `get_supply(asset)`
