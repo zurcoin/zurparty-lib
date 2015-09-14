@@ -355,6 +355,7 @@ def initialise(db):
 
 def get_tx_info(tx_hex, block_parser=None, block_index=None):
     """Get the transaction info. Calls one of two subfunctions depending on signature type."""
+    assert tx_hex
     if not block_index:
         block_index = util.CURRENT_BLOCK_INDEX
     try:
@@ -466,6 +467,7 @@ def get_tx_info1(tx_hex, block_index, block_parser=None):
             vin_ctx = backend.deserialize(vin_tx['__data__'])
         else:
             vin_tx = backend.getrawtransaction(ib2h(vin.prevout.hash))
+            assert vin_tx is not None #not a bogus transaction
             vin_ctx = backend.deserialize(vin_tx)
         vout = vin_ctx.vout[vin.prevout.n]
         fee += vout.nValue
@@ -601,6 +603,7 @@ def get_tx_info2(tx_hex, block_parser=None):
             vin_ctx = backend.deserialize(vin_tx['__data__'])
         else:
             vin_tx = backend.getrawtransaction(ib2h(vin.prevout.hash))
+            assert vin_tx is not None #not a bogus transaction
             vin_ctx = backend.deserialize(vin_tx)
         vout = vin_ctx.vout[vin.prevout.n]
         fee += vout.nValue
@@ -710,6 +713,8 @@ def list_tx(db, block_hash, block_index, block_time, tx_hash, tx_index, tx_hex=N
     # Get the important details about each transaction.
     if tx_hex is None:
         tx_hex = backend.getrawtransaction(tx_hash)
+        if tx_hex is None: #bogus transaction
+            return None
     source, destination, btc_amount, fee, data = get_tx_info(tx_hex)
 
     # For mempool
@@ -1009,7 +1014,9 @@ def follow(db):
                 # List the transactions in the block.
                 for tx_hash in txhash_list:
                     tx_hex = raw_transactions[tx_hash]
+                    assert tx_hex is not None #should always be a valid transaction
                     tx_index = list_tx(db, block_hash, block_index, block_time, tx_hash, tx_index, tx_hex)
+                    assert tx_index is not None
 
                 # Parse the transactions in the block.
                 parse_block(db, block_index, block_time)
@@ -1071,9 +1078,11 @@ def follow(db):
                                           )
 
                             # List transaction.
-                            try:    # Sometimes the transactions can’t be found: `{'code': -5, 'message': 'No information available about transaction'} Is txindex enabled in Bitcoind?`
-                                mempool_tx_index = list_tx(db, None, block_index, curr_time, tx_hash, mempool_tx_index)
-                            except backend.addrindex.BackendRPCError:
+                            mempool_tx_index = list_tx(db, None, block_index, curr_time, tx_hash, mempool_tx_index)
+                            if mempool_tx_index is None:
+                                #bogus transaction, handle as a not supported transaction
+                                not_supported[tx_hash] = ''
+                                not_supported_sorted.append((block_index, tx_hash))
                                 raise MempoolError
 
                             # Parse transaction.

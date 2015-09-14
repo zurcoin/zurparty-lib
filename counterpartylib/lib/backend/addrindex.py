@@ -95,6 +95,9 @@ def rpc_batch(request_list):
 def extract_addresses(tx_hash):
     logger.debug('Extract addresses: {}'.format(tx_hash))
     tx = getrawtransaction(tx_hash, verbose=True)
+    if tx is None: #bogus transaction
+        return [], None
+
     addresses = set() #use set to avoid duplicates
 
     for vout in tx['vout']:
@@ -105,6 +108,8 @@ def extract_addresses(tx_hash):
     raw_transactions = getrawtransaction_batch(txhash_list, verbose=True)
     for vin in tx['vin']:
         vin_tx = raw_transactions[vin['txid']]
+        if vin_tx is None: #bogus transaction
+            continue
         vout = vin_tx['vout'][vin['vout']]
         if 'addresses' in vout['scriptPubKey']:
             addresses.add(tuple(vout['scriptPubKey']['addresses']))
@@ -189,7 +194,6 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
         len(txhash_list), len(raw_transactions_cache), len(payload)))
 
     # populate cache
-    added_entries_to_cache = []
     if len(payload) > 0:
         batch_responses = rpc_batch(payload)
         for response in batch_responses:
@@ -197,9 +201,11 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
                 tx_hex = response['result']
                 tx_hash = tx_hash_call_id[response['id']]
                 raw_transactions_cache[tx_hash] = tx_hex
-                added_entries_to_cache.append(tx_hash) #for debugging
-            else:
-                #TODO: this seems to happen for bogus transactions? Maybe handle it more gracefully than just erroring out?
+            elif response['error']['code'] == -5:
+                #this seems to happen for bogus transactions -- insert a None for the result of this hash, which will need to be dealt with by the caller
+                raw_transactions_cache[tx_hash] = None
+                logging.warn('Bogus TX with no raw info (??): {} (txhash:: {})'.format(response['error'], tx_hash_call_id.get(response.get('id', '??'), '??')))
+            else: #for all other errors
                 raise BackendRPCError('{} (txhash:: {})'.format(response['error'], tx_hash_call_id.get(response.get('id', '??'), '??')))
 
     # get transactions from cache
@@ -209,13 +215,12 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
             if verbose:
                 result[tx_hash] = raw_transactions_cache[tx_hash]
             else:
-                result[tx_hash] = raw_transactions_cache[tx_hash]['hex']
-        except KeyError: #likely race condition
-            logger.warn("getrawtransaction_batch EXTRA INFO, txhash_list size: {} / raw_transactions_cache size: {} / # rpc_batch calls: {}".format(
-                len(txhash_list), len(raw_transactions_cache), len(payload)))
-            logger.warn("txhash in noncached_txhashes: %s, in txhash_list: %s -- list %s" % (
+                result[tx_hash] = raw_transactions_cache[tx_hash]['hex'] if raw_transactions_cache[tx_hash] is not None else None
+        except KeyError as e: #likely race condition
+            import hashlib
+            logger.warn("tx missing in rawtx cache: {} -- txhash_list size: {}, hash: {} / raw_transactions_cache size: {} / # rpc_batch calls: {} / txhash in noncached_txhashes: {} / txhash in txhash_list: {} -- list {}".format(
+                e, len(txhash_list), hashlib.md5(json.dumps(txhash_list).encode()).hexdigest(), len(raw_transactions_cache), len(payload),
                 tx_hash in noncached_txhashes, tx_hash in txhash_list, list(set(txhash_list).difference(set(noncached_txhashes))) ))
-            logger.warn("added_entries_to_cache: %s" % added_entries_to_cache)
             if not _recursing: #try again
                 r = getrawtransaction_batch([tx_hash], verbose=verbose, _recursing=True)
                 result[tx_hash] = r[tx_hash]
