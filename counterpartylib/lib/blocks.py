@@ -881,6 +881,7 @@ def get_next_tx_index(db):
     else:
         tx_index = 0
     cursor.close()
+    assert tx_index is not None
     return tx_index
 
 
@@ -1031,7 +1032,7 @@ def follow(db):
                 tx_h = not_supported_sorted.popleft()[1]
                 del not_supported[tx_h]
 
-            logger.info('Block: %s (%ss)'%(str(block_index), "{:.2f}".format(time.time() - starttime, 3)))
+            logger.info('Block: %s (%ss)' % (str(block_index), "{:.2f}".format(time.time() - starttime, 3)))
             # Increment block index.
             block_count = backend.getblockcount()
             block_index += 1
@@ -1122,6 +1123,8 @@ def follow(db):
                     tx_hash, new_message = message
                     new_message['tx_hash'] = tx_hash
                     cursor.execute('''INSERT INTO mempool VALUES(:tx_hash, :command, :category, :bindings, :timestamp)''', (new_message))
+
+            logger.debug('Refresh mempool: %ss' % ("{:.2f}".format(time.time() - starttime, 3)))
 
             # Wait
             db.wal_checkpoint(mode=apsw.SQLITE_CHECKPOINT_PASSIVE)
