@@ -15,6 +15,7 @@ from functools import lru_cache
 from counterpartylib.lib import config, script, util
 
 raw_transactions_cache = util.DictCache(size=config.BACKEND_RAW_TRANSACTIONS_CACHE_SIZE) #used in getrawtransaction_batch()
+unconfirmed_transactions_cache = None
 
 class BackendRPCError(Exception):
     pass
@@ -74,64 +75,80 @@ def rpc(method, params):
     
 def rpc_batch(request_list):
     responses = collections.deque()
-    def get_requests_chunk(l, n):
-        n = max(1, n)
-        return [l[i:i + n] for i in range(0, len(l), n)]
- 
+
     def make_call(chunk):
         #send a list of requests to bitcoind to be executed
         #note that this is list executed serially, in the same thread in bitcoind
         #e.g. see: https://github.com/bitcoin/bitcoin/blob/master/src/rpcserver.cpp#L939
         responses.extend(rpc_call(chunk))
  
-    chunks = get_requests_chunk(request_list, config.RPC_BATCH_SIZE)
+    chunks = util.chunkify(request_list, config.RPC_BATCH_SIZE)
     with concurrent.futures.ThreadPoolExecutor(max_workers=config.BACKEND_RPC_BATCH_NUM_WORKERS) as executor:
         for chunk in chunks:
             executor.submit(make_call, chunk)
     return list(responses)
 
-# TODO: use scriptpubkey_to_address()
-@lru_cache(maxsize=4096)
-def extract_addresses(tx_hash):
-    logger.debug('Extract addresses: {}'.format(tx_hash))
-    tx = getrawtransaction(tx_hash, verbose=True)
-    if tx is None: #bogus transaction
-        return [], None
-
-    addresses = set() #use set to avoid duplicates
-
-    for vout in tx['vout']:
-        if 'addresses' in vout['scriptPubKey']:
-            addresses.add(tuple(vout['scriptPubKey']['addresses']))
-
-    txhash_list = [vin['txid'] for vin in tx['vin']]
-    raw_transactions = getrawtransaction_batch(txhash_list, verbose=True)
-    for vin in tx['vin']:
-        vin_tx = raw_transactions[vin['txid']]
-        if vin_tx is None: #bogus transaction
+def extract_addresses(txhash_list):
+    #Algorithm not very space efficient, but very time efficient, via maxing out RPC batching, and allowing RPC concurrency to be fully utilized
+    #tx_hashes_tx[<hash>] contains transaction object
+    #tx_hashes_addresses[<hash>] contains list of extracted addresses for that hash (and all inputs and outputs listed in _hashes)
+    #tx_inputs_hashes contains al txhashes for all transaction's inputs
+    
+    #logger.debug('Extract addresses, {} entries'.format(len(txhash_list)))
+    tx_hashes_tx = getrawtransaction_batch(txhash_list, verbose=True)
+    tx_hashes_addresses = {}
+    tx_inputs_hashes = set() #use set to avoid duplicates
+    
+    for tx_hash, tx in tx_hashes_tx.items():
+        if tx is None: #bogus tx
+            tx_hashes_tx[tx_hash] = None
+            tx_hashes_addresses[tx_hash] = set()
             continue
-        vout = vin_tx['vout'][vin['vout']]
-        if 'addresses' in vout['scriptPubKey']:
-            addresses.add(tuple(vout['scriptPubKey']['addresses']))
-    return list(addresses), tx
+        
+        tx_hashes_addresses[tx_hash] = set()
+        for vout in tx['vout']:
+            if 'addresses' in vout['scriptPubKey']:
+                tx_hashes_addresses[tx_hash].update(tuple(vout['scriptPubKey']['addresses']))
+        tx_inputs_hashes.update([vin['txid'] for vin in tx['vin']])
+
+    raw_transactions = getrawtransaction_batch(list(tx_inputs_hashes), verbose=True)
+    for tx_hash, tx in tx_hashes_tx.items():
+        for vin in tx['vin']:
+            vin_tx = raw_transactions[vin['txid']]
+            if vin_tx is None: #bogus transaction
+                continue
+            vout = vin_tx['vout'][vin['vout']]
+            if 'addresses' in vout['scriptPubKey']:
+                tx_hashes_addresses[tx_hash].update(tuple(vout['scriptPubKey']['addresses']))
+
+    return tx_hashes_addresses, tx_hashes_tx
 
 def unconfirmed_transactions(address):
-    # NOTE: This operation can be very slow.
-    logger.debug('Checking mempool for UTXOs -- extract_addresses cache stats: {}'.format(str(extract_addresses.cache_info())))
+    logger.debug("unconfirmed_transactions called: %s" % address)
+    if unconfirmed_transactions_cache is None:
+        raise Exception("Unconfirmed transactions cache is not initialized")
+    return unconfirmed_transactions_cache.get(address, [])
 
-    unconfirmed_tx = []
-    mempool_txhash_list = getrawmempool()
-    for index, tx_hash in enumerate(mempool_txhash_list):
-        logger.debug('Possible mempool UTXO: {} ({}/{})'.format(tx_hash, index, len(mempool_txhash_list)))
-        addresses, tx = extract_addresses(tx_hash)
-        if (address,) in addresses:
-            unconfirmed_tx.append(tx)
-    return unconfirmed_tx
+def refresh_unconfirmed_transactions_cache(mempool_txhash_list):
+    # NOTE: This operation can be very slow.
+    global unconfirmed_transactions_cache
+
+    unconfirmed_txes = {}
+    #mempool_txhash_list = getrawmempool()
+    tx_hashes_addresses, tx_hashes_tx = extract_addresses(mempool_txhash_list)
+    for tx_hash, addresses in tx_hashes_addresses.items():
+        for address in addresses:
+            if address not in unconfirmed_txes:
+                unconfirmed_txes[address] = []
+            unconfirmed_txes[address].append(tx_hashes_tx[tx_hash])
+    unconfirmed_transactions_cache = unconfirmed_txes
+    logger.debug('Unconfirmed transactions cache refreshed ({} entries, from {} supported mempool txes)'.format(
+        len(unconfirmed_transactions_cache), len(mempool_txhash_list)))
 
 def searchrawtransactions(address, unconfirmed=False):
     # Get unconfirmed transactions.
     if unconfirmed:
-        logger.debug('Getting unconfirmed transactions.')
+        logger.debug('searchrawtransactions: Getting unconfirmed transactions.')
         unconfirmed = unconfirmed_transactions(address)
     else:
         unconfirmed = []
@@ -168,6 +185,14 @@ def sendrawtransaction(tx_hex):
     return rpc('sendrawtransaction', [tx_hex])
 
 def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
+    if len(txhash_list) > config.BACKEND_RAW_TRANSACTIONS_CACHE_SIZE:
+        #don't try to load in more than BACKEND_RAW_TRANSACTIONS_CACHE_SIZE entries in a single call
+        txhash_list_chunks = util.chunkify(txhash_list, config.BACKEND_RAW_TRANSACTIONS_CACHE_SIZE)
+        txes = {}
+        for txhash_list_chunk in txhash_list_chunks:
+            txes.update(getrawtransaction_batch(txhash_list_chunk, verbose=verbose))
+        return txes
+    
     tx_hash_call_id = {}
     payload = []
     noncached_txhashes = []
@@ -190,7 +215,7 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
     for tx_hash in set(txhash_list).difference(set(noncached_txhashes)):
         raw_transactions_cache.refresh(tx_hash)
 
-    logger.debug("getrawtransaction_batch called, txhash_list size: {} / raw_transactions_cache size: {} / # rpc_batch calls: {}".format(
+    logger.debug("getrawtransaction_batch: txhash_list size: {} / raw_transactions_cache size: {} / # getrawtransaction calls: {}".format(
         len(txhash_list), len(raw_transactions_cache), len(payload)))
 
     # populate cache
