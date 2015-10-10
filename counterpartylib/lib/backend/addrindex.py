@@ -10,7 +10,7 @@ import threading
 import concurrent.futures
 import collections
 import binascii
-from functools import lru_cache
+import hashlib
 
 from counterpartylib.lib import config, script, util
 
@@ -89,12 +89,6 @@ def rpc_batch(request_list):
     return list(responses)
 
 def extract_addresses(txhash_list):
-    #Algorithm not very space efficient, but very time efficient, via maxing out RPC batching, and allowing RPC concurrency to be fully utilized
-    #tx_hashes_tx[<hash>] contains transaction object
-    #tx_hashes_addresses[<hash>] contains list of extracted addresses for that hash (and all inputs and outputs listed in _hashes)
-    #tx_inputs_hashes contains al txhashes for all transaction's inputs
-    
-    #logger.debug('Extract addresses, {} entries'.format(len(txhash_list)))
     tx_hashes_tx = getrawtransaction_batch(txhash_list, verbose=True)
     tx_hashes_addresses = {}
     tx_inputs_hashes = set() #use set to avoid duplicates
@@ -104,7 +98,7 @@ def extract_addresses(txhash_list):
             tx_hashes_tx[tx_hash] = None
             tx_hashes_addresses[tx_hash] = set()
             continue
-        
+
         tx_hashes_addresses[tx_hash] = set()
         for vout in tx['vout']:
             if 'addresses' in vout['scriptPubKey']:
@@ -134,7 +128,6 @@ def refresh_unconfirmed_transactions_cache(mempool_txhash_list):
     global unconfirmed_transactions_cache
 
     unconfirmed_txes = {}
-    #mempool_txhash_list = getrawmempool()
     tx_hashes_addresses, tx_hashes_tx = extract_addresses(mempool_txhash_list)
     for tx_hash, addresses in tx_hashes_addresses.items():
         for address in addresses:
@@ -195,7 +188,9 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
     
     tx_hash_call_id = {}
     payload = []
-    noncached_txhashes = []
+    noncached_txhashes = set()
+    
+    txhash_list = set(txhash_list)
 
     # payload for transactions not in cache
     for tx_hash in txhash_list:
@@ -207,12 +202,12 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
                 "jsonrpc": "2.0",
                 "id": call_id
             })
-            noncached_txhashes.append(tx_hash)
+            noncached_txhashes.add(tx_hash)
             tx_hash_call_id[call_id] = tx_hash
     #refresh any/all cache entries that already exist in the cache,
     # so they're not inadvertently removed by another thread before we can consult them
     #(this assumes that the size of the working set for any given workload doesn't exceed the max size of the cache)
-    for tx_hash in set(txhash_list).difference(set(noncached_txhashes)):
+    for tx_hash in txhash_list.difference(noncached_txhashes):
         raw_transactions_cache.refresh(tx_hash)
 
     logger.debug("getrawtransaction_batch: txhash_list size: {} / raw_transactions_cache size: {} / # getrawtransaction calls: {}".format(
@@ -236,16 +231,15 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
     # get transactions from cache
     result = {}
     for tx_hash in txhash_list:
-        try: #TEMP error handling for better race condition diagnosis. REMOVE before pushing to master
+        try:
             if verbose:
                 result[tx_hash] = raw_transactions_cache[tx_hash]
             else:
                 result[tx_hash] = raw_transactions_cache[tx_hash]['hex'] if raw_transactions_cache[tx_hash] is not None else None
-        except KeyError as e: #likely race condition
-            import hashlib
-            logger.warn("tx missing in rawtx cache: {} -- txhash_list size: {}, hash: {} / raw_transactions_cache size: {} / # rpc_batch calls: {} / txhash in noncached_txhashes: {} / txhash in txhash_list: {} -- list {}".format(
-                e, len(txhash_list), hashlib.md5(json.dumps(txhash_list).encode()).hexdigest(), len(raw_transactions_cache), len(payload),
-                tx_hash in noncached_txhashes, tx_hash in txhash_list, list(set(txhash_list).difference(set(noncached_txhashes))) ))
+        except KeyError as e: #shows up most likely due to finickyness with addrindex not always returning results that we need...
+            logger.debug("tx missing in rawtx cache: {} -- txhash_list size: {}, hash: {} / raw_transactions_cache size: {} / # rpc_batch calls: {} / txhash in noncached_txhashes: {} / txhash in txhash_list: {} -- list {}".format(
+                e, len(txhash_list), hashlib.md5(json.dumps(list(txhash_list)).encode()).hexdigest(), len(raw_transactions_cache), len(payload),
+                tx_hash in noncached_txhashes, tx_hash in txhash_list, list(txhash_list.difference(noncached_txhashes)) ))
             if not _recursing: #try again
                 r = getrawtransaction_batch([tx_hash], verbose=verbose, _recursing=True)
                 result[tx_hash] = r[tx_hash]
