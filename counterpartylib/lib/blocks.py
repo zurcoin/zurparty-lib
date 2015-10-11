@@ -817,7 +817,8 @@ def reparse(db, block_index=None, quiet=False):
 def list_tx(db, block_hash, block_index, block_time, tx_hash, tx_index, tx_hex=None):
     assert type(tx_hash) == str
     cursor = db.cursor()
-    assert tx_index
+    if tx_index is None: #bogus transaction
+        return None
 
     # Edge case: confirmed tx_hash also in mempool
     cursor.execute('''SELECT * FROM transactions WHERE tx_hash = ?''', (tx_hash,))
