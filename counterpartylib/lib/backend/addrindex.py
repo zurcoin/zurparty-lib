@@ -224,7 +224,7 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
             elif response['error']['code'] == -5:
                 #this seems to happen for bogus transactions -- insert a None for the result of this hash, which will need to be dealt with by the caller
                 raw_transactions_cache[tx_hash] = None
-                logging.warn('Bogus TX with no raw info (??): {} (txhash:: {})'.format(response['error'], tx_hash_call_id.get(response.get('id', '??'), '??')))
+                logging.warn('Bogus TX with no raw info (txhash: {}): {}'.format(tx_hash_call_id.get(response.get('id', '??'), '??'), response['error']))
             else: #for all other errors
                 raise BackendRPCError('{} (txhash:: {})'.format(response['error'], tx_hash_call_id.get(response.get('id', '??'), '??')))
 
