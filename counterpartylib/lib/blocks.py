@@ -1151,7 +1151,8 @@ def follow(db):
                 # List the transactions in the block.
                 for tx_hash in txhash_list:
                     tx_hex = raw_transactions[tx_hash]
-                    assert tx_hex is not None # Should always be a valid transaction, since it's already in a block
+                    if tx_hex is None: # addrindex must contain all txes mined in a block...
+                        raise Exception("txhash {} (mined in block hash {}) not in addrindex raw transactions cache.".format(tx_hash, block_hash))
                     tx_index = list_tx(db, block_hash, block_index, block_time, tx_hash, tx_index, tx_hex)
                     assert tx_index is not None
 
