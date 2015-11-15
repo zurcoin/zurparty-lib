@@ -6,6 +6,7 @@ import json
 import requests
 from requests.exceptions import Timeout, ReadTimeout, ConnectionError
 import time
+import copy
 import threading
 import concurrent.futures
 import collections
@@ -132,8 +133,8 @@ def refresh_unconfirmed_transactions_cache(mempool_txhash_list):
     for tx_hash, addresses in tx_hashes_addresses.items():
         for address in addresses:
             if address not in unconfirmed_txes:
-                unconfirmed_txes[address] = []
-            unconfirmed_txes[address].append(tx_hashes_tx[tx_hash])
+                unconfirmed_txes[copy.copy(address)] = []
+            unconfirmed_txes[address].append(copy.deepcopy(tx_hashes_tx[tx_hash]))
     unconfirmed_transactions_cache = unconfirmed_txes
     logger.debug('Unconfirmed transactions cache refreshed ({} entries, from {} supported mempool txes)'.format(
         len(unconfirmed_transactions_cache), len(mempool_txhash_list)))
@@ -177,7 +178,8 @@ def getrawmempool():
 def sendrawtransaction(tx_hex):
     return rpc('sendrawtransaction', [tx_hex])
 
-def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
+GETRAWTRANSACTION_MAX_RETRIES=2
+def getrawtransaction_batch(txhash_list, verbose=False, _retry=0):
     if len(txhash_list) > config.BACKEND_RAW_TRANSACTIONS_CACHE_SIZE:
         #don't try to load in more than BACKEND_RAW_TRANSACTIONS_CACHE_SIZE entries in a single call
         txhash_list_chunks = util.chunkify(txhash_list, config.BACKEND_RAW_TRANSACTIONS_CACHE_SIZE)
@@ -218,8 +220,9 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
         batch_responses = rpc_batch(payload)
         for response in batch_responses:
             if 'error' not in response or response['error'] is None:
-                tx_hex = response['result']
-                tx_hash = tx_hash_call_id[response['id']]
+                #use copy module to avoid lingering references to batch_responses
+                tx_hash = copy.copy(tx_hash_call_id[response['id']])
+                tx_hex = copy.deepcopy(response['result'])
                 raw_transactions_cache[tx_hash] = tx_hex
             elif response['error']['code'] == -5:
                 #this seems to happen for bogus transactions -- insert a None for the result of this hash, which will need to be dealt with by the caller
@@ -237,11 +240,11 @@ def getrawtransaction_batch(txhash_list, verbose=False, _recursing=False):
             else:
                 result[tx_hash] = raw_transactions_cache[tx_hash]['hex'] if raw_transactions_cache[tx_hash] is not None else None
         except KeyError as e: #shows up most likely due to finickyness with addrindex not always returning results that we need...
-            logger.debug("tx missing in rawtx cache: {} -- txhash_list size: {}, hash: {} / raw_transactions_cache size: {} / # rpc_batch calls: {} / txhash in noncached_txhashes: {} / txhash in txhash_list: {} -- list {}".format(
+            logger.warning("tx missing in rawtx cache: {} -- txhash_list size: {}, hash: {} / raw_transactions_cache size: {} / # rpc_batch calls: {} / txhash in noncached_txhashes: {} / txhash in txhash_list: {} -- list {}".format(
                 e, len(txhash_list), hashlib.md5(json.dumps(list(txhash_list)).encode()).hexdigest(), len(raw_transactions_cache), len(payload),
                 tx_hash in noncached_txhashes, tx_hash in txhash_list, list(txhash_list.difference(noncached_txhashes)) ))
-            if not _recursing: #try again
-                r = getrawtransaction_batch([tx_hash], verbose=verbose, _recursing=True)
+            if  _retry < GETRAWTRANSACTION_MAX_RETRIES: #try again
+                r = getrawtransaction_batch([tx_hash], verbose=verbose, _retry=_retry+1)
                 result[tx_hash] = r[tx_hash]
             else:
                 raise #already tried again, give up
