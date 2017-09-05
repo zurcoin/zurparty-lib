@@ -940,7 +940,7 @@ def kickstart(db, bitcoind_dir):
         elif platform.system() == 'Windows':
             bitcoind_dir = os.path.join(os.environ['APPDATA'], 'Bitcoin')
         else:
-            bitcoind_dir = os.path.expanduser('~/.bitcoin')
+            bitcoind_dir = os.path.expanduser('/media/ori/4646918A46917AFF/.zurcoin/')
     if not os.path.isdir(bitcoind_dir):
         raise Exception('Bitcoin Core data directory not found at {}. Use --bitcoind-dir parameter.'.format(bitcoind_dir))
 
