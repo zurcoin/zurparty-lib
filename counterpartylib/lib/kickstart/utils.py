@@ -18,9 +18,6 @@ def inverse_hash(hashstring):
 def ib2h(b):
 	return inverse_hash(b2h(b))
 
-def double_quark_hash(b):
-    return quark_hash.getPoWHash(quark_hash.getPoWHash(b))
-
 class JsonDecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o,  decimal.Decimal):

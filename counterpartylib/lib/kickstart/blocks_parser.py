@@ -3,7 +3,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .bc_data_stream import BCDataStream
-from .utils import b2h, double_hash, ib2h, inverse_hash, double_quark_hash
+from .utils import b2h, double_hash, ib2h, inverse_hash
+import quark_hash
 
 def open_leveldb(db_dir):
     try:
@@ -85,7 +86,7 @@ class BlockchainParser():
         block_header['nonce'] = vds.read_uint32()
         header_end = vds.read_cursor
         header = vds.input[header_start:header_end]
-        block_header['block_hash'] = ib2h(double_quark_hash(header))
+        block_header['block_hash'] = ib2h(quark_hash.getPoWHash(header))
         block_header['__header__'] = b2h(header)
         return block_header
 
